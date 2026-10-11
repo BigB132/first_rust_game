@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use bevy::{
-    color::palettes::css::WHITE, image::ImageSamplerDescriptor, prelude::*, time::common_conditions::on_timer,
+    image::ImageSamplerDescriptor, prelude::*, time::common_conditions::on_timer,
 };
 use flappy_bird::*;
 
@@ -21,7 +21,10 @@ struct Player;
 struct BirdFlap(usize);
 
 #[derive(Resource)]
-struct BirdAnimationFrames([Handle<Image>; 3]);
+struct BirdAnimationFrames([Handle<Image>; 4]);
+
+#[derive(Resource)]
+struct CounterNums([Handle<Image>; 10]);
 
 #[derive(Component)]
 struct Gravity(f32);
@@ -39,7 +42,7 @@ struct Score(u32);
 pub struct ScorePoint;
 
 #[derive(Component)]
-struct ScoreText;
+struct ScoreDisplay;
 
 #[derive(Component)]
 struct BackgroundTile;
@@ -70,7 +73,7 @@ fn main() {
             gravity,
             check_in_bounds,
             check_collisions,
-            animate_bird.run_if(on_timer(Duration::from_millis(300)))
+            animate_bird.run_if(on_timer(Duration::from_millis(100)))
         ))
         .add_systems(Update, (
             on_click,
@@ -91,13 +94,26 @@ fn startup(
     mut game_info: ResMut<GameInfo>,
     asset_server: Res<AssetServer>,
 ) { 
-    // BIRD FRAMES
-    let frames: BirdAnimationFrames = BirdAnimationFrames([
+    let bird_frames: BirdAnimationFrames = BirdAnimationFrames([
         asset_server.load("sprites/yellowbird-0.png"),
         asset_server.load("sprites/yellowbird-1.png"),
         asset_server.load("sprites/yellowbird-2.png"),
+        asset_server.load("sprites/yellowbird-1.png"),
     ]);
-    commands.insert_resource(frames);
+    let nums: CounterNums = CounterNums([
+        asset_server.load("sprites/0.png"),
+        asset_server.load("sprites/1.png"),
+        asset_server.load("sprites/2.png"),
+        asset_server.load("sprites/3.png"),
+        asset_server.load("sprites/4.png"),
+        asset_server.load("sprites/5.png"),
+        asset_server.load("sprites/6.png"),
+        asset_server.load("sprites/7.png"),
+        asset_server.load("sprites/8.png"),
+        asset_server.load("sprites/9.png"),
+    ]);
+    commands.insert_resource(bird_frames);
+    commands.insert_resource(nums);
 
     game_info.game_state = 0;
 
@@ -122,7 +138,7 @@ fn startup(
             custom_size: Some(Vec2::new(34.0 * 0.75, 24.0 * 0.75)),
             ..default()
         },
-        Transform::from_xyz(-CANVAS_SIZE.x / 4.0, 0.0, 1.0),
+        Transform::from_xyz(-CANVAS_SIZE.x / 4.0, 0.0, 2.0),
     ));
 
     // SPAWN INSTRUCTIONS
@@ -152,7 +168,6 @@ fn startup(
 
     // SPAWN THE GROUND
     for i in 0..10 {
-        println!("SPawn ground tile {}", i as f32 * GR_X);
         commands.spawn((
             GroundTile,
             Sprite {
@@ -169,41 +184,26 @@ fn startup(
 fn start_game(
     _: On<StartGame>,
     mut commands: Commands,
-    instructions: Query<Entity, With<Instructions>>
+    instructions: Query<Entity, With<Instructions>>,
 ) {
     println!("Start game");
     for entity in instructions {
         commands.entity(entity).despawn();
     }
-
-    // SPAWN THE TEXT
-    commands.spawn((
-        Node {
-            width: percent(100.),
-            margin: px(20.).top(),
-            ..default()
-        },
-        Text::new("0"),
-        TextLayout::justify(Justify::Center),
-        TextFont {
-            font_size: 33.0.into(),
-            ..default()
-        },
-        TextColor(WHITE.into()),
-        ScoreText
-    ));
 }
 
 fn check_in_bounds(
     player: Single<&Transform, With<Player>>,
-    mut commands: Commands,
-    game_info: Res<GameInfo>,
+    mut game_info: ResMut<GameInfo>,
+
 ) {
     if game_info.game_state == 2 {
         return;
     }
-    if player.translation.y < - CANVAS_SIZE.y / 2.0 -PLAYER_SIZE || player.translation.y > CANVAS_SIZE.y / 2.0 + PLAYER_SIZE {
-        commands.trigger(EndGame);
+    if player.translation.y > CANVAS_SIZE.y / 2.0 + PLAYER_SIZE {
+        game_info.out_of_bounds = true;
+    } else {
+        game_info.out_of_bounds = false;
     }
 }
 
@@ -216,10 +216,12 @@ fn on_click(
     mut score: ResMut<Score>,
     player: Single<Entity, With<Player>>,
     pipes: Query<Entity, With<Pipe>>,
+    counters: Query<Entity, With<ScoreDisplay>>,
 ) {
     if buttons.just_pressed(MouseButton::Left) {
         if game_info.game_state == 0 {
             game_info.game_state = 1;
+            score.0 = 0;
             commands.trigger(StartGame);
         } else if game_info.game_state == 2 {
             score.0 = 0;
@@ -231,11 +233,17 @@ fn on_click(
             for entity in &pipes {
                 commands.entity(entity).despawn();
             }
+            for entity in &counters {
+                commands.entity(entity).despawn();
+            }
             commands.trigger(StartGame);
             game_info.game_state = 0;
+            game_info.hit_ground = false;
             return();
         }
-        velocity.0 = 150.;
+        if game_info.out_of_bounds == false {
+            velocity.0 = 150.;
+        }
 
         commands.spawn((
             AudioPlayer::<AudioSource>(asset_server.load("audio/wing.ogg")),
@@ -253,7 +261,7 @@ fn gravity(
     time: Res<Time>,
     game_info: Res<GameInfo>,
 ) {
-    if game_info.game_state == 0 {
+    if game_info.game_state == 0 || game_info.hit_ground == true {
         return()
     } else {
         for (mut transform, mut velocity, gravity) in &mut transforms {
@@ -266,15 +274,14 @@ fn gravity(
 fn check_collisions(
     mut commands: Commands,
     player: Single<(&Sprite, Entity), With<Player>>,
+    player_entity: Single<Entity, With<Player>>,
     pipe_segments: Query<(&Sprite, Entity), Or<(With<PipeTop>, With<PipeBottom>)>>,
     pipe_gaps: Query<(&Sprite, Entity), With<PointsGate>>,
     transform_helper: TransformHelper,
     asset_server: Res<AssetServer>,
-    game_info: Res<GameInfo>
+    mut game_info: ResMut<GameInfo>,
+    ground_tiles: Query<(&Sprite, Entity), With<GroundTile>>,
 ) -> Result<()> {
-    if game_info.game_state == 2 {
-        return Ok(());
-    }
 
     let player_transform = transform_helper.compute_global_transform(player.1)?;
     let player_collider = BoundingCircle::new(player_transform.translation().xy(), PLAYER_SIZE/2.);
@@ -293,7 +300,9 @@ fn check_collisions(
                 AudioPlayer::<AudioSource>(asset_server.load("audio/hit.ogg")),
                 PlaybackSettings::DESPAWN,
             ));
-            commands.trigger(EndGame);
+            if game_info.game_state == 1 {
+                commands.trigger(EndGame);
+            }
         }
     };
 
@@ -309,6 +318,29 @@ fn check_collisions(
             println!("point!");
             commands.trigger(ScorePoint);
             commands.entity(entity).despawn();
+        }
+    }
+
+    for (sprite, entity) in &ground_tiles {
+        let gap_transform = transform_helper
+            .compute_global_transform(entity)?;
+        let gap_collider = Aabb2d::new(
+            gap_transform.translation().xy(),
+            sprite.custom_size.unwrap() / 2.,
+        );
+
+        if player_collider.intersects(&gap_collider) {
+            println!("touching ground");
+            if game_info.game_state == 1 {
+                commands.trigger(EndGame);
+            }
+
+            commands.entity(*player_entity).insert((
+                Velocity(0.),
+            ));
+
+            game_info.hit_ground = true;
+
         }
     }
 
@@ -329,12 +361,28 @@ fn score_point(
 }
 
 fn update_score(
-    mut query: Query<&mut Text, With<ScoreText>>,
-    score: Res<Score>
+    counters: Query<Entity, With<ScoreDisplay>>,
+    score: Res<Score>,
+    counter_nums: Res<CounterNums>,
+    mut commands: Commands,
+    game_info: Res<GameInfo>
 ) {
-    for mut span in &mut query {
-        span.0 = score.0.to_string();
+    if game_info.game_state == 0 {return};
+    for counter in counters {
+        commands.entity(counter).despawn();
     }
+    let len: usize = score.0.to_string().len();
+    println!("LEN: {}", len);
+    for (i, n) in score.0.to_string().chars().enumerate() {
+        commands.spawn((
+            Sprite {
+                image: counter_nums.0[n.to_digit(10).unwrap() as usize].clone(),
+                ..default()
+            },
+            ScoreDisplay,
+            Transform::from_xyz((i as f32 - (len as f32 - 1.0) / 2.0) * 28.0, CANVAS_SIZE.y / 2.0 * 0.75, 5.0)
+        ));
+    };
 }
 
 fn enforce_bird_direction(
@@ -342,17 +390,23 @@ fn enforce_bird_direction(
         (&mut Transform, &Velocity),
         With<Player>,
     >,
+    game_info: Res<GameInfo>,
 ) {
+    if game_info.hit_ground == true {
+        player.0.rotation = Quat::from_rotation_z(-90.0);
+        return;
+    }
     let calculated_velocity =
-        Vec2::new(PIPE_SPEED * 5., player.1.0);
+        Vec2::new(PIPE_SPEED * 4., player.1.0);
     player.0.rotation = Quat::from_rotation_z(calculated_velocity.to_angle());
 }
 
 fn animate_bird(
-    // mut player: Single<&mut Sprite, With<Player>>,
     mut query: Query<(&mut Sprite, &mut BirdFlap), With<Player>>,
-    frames: Res<BirdAnimationFrames>
+    frames: Res<BirdAnimationFrames>,
+    game_info: Res<GameInfo>,
 ) {
+    if game_info.hit_ground == true {return}
     for (mut sprite, mut birdflap) in &mut query {
         birdflap.0 = (birdflap.0 + 1) % 3;
         sprite.image = frames.0[birdflap.0].clone();
@@ -363,7 +417,9 @@ fn animate_bird(
 fn scroll_background(
     mut query: Query<&mut Transform, With<BackgroundTile>>,
     time: Res<Time>,
+    game_info: Res<GameInfo>
 ) {
+    if game_info.game_state == 2 {return};
     let half_canvas_x = CANVAS_SIZE.x / 2.0;
 
     for mut transform in &mut query {
@@ -378,7 +434,9 @@ fn scroll_background(
 fn scroll_ground(
     mut query: Query<&mut Transform, With<GroundTile>>,
     time: Res<Time>,
+    game_info: Res<GameInfo>,
 ) {
+    if game_info.game_state == 2 {return};
     let half_canvas_x = CANVAS_SIZE.x / 2.0;
 
     for mut transform in &mut query {

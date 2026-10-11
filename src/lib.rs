@@ -25,6 +25,8 @@ pub struct GameInfo {
     // 1 for in Game
     // 2 for Endscreen
     pub game_state: u32,
+    pub out_of_bounds: bool,
+    pub hit_ground: bool,
 }
 
 pub struct PipePlugin;
@@ -119,7 +121,9 @@ fn spawn_pipes(
 pub fn shift_pipes_to_the_left(
     mut pipes: Query<&mut Transform, With<Pipe>>,
     time: Res<Time>,
+    game_info: Res<GameInfo>,
 ) {
+    if game_info.game_state == 2 {return};
     for mut pipe in &mut pipes {
         pipe.translation.x -= PIPE_SPEED * time.delta_secs();
     }
