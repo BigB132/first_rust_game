@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use bevy::{
-    image::ImageSamplerDescriptor, prelude::*, time::common_conditions::on_timer,
+    prelude::*, time::common_conditions::on_timer,
 };
 use flappy_bird::*;
 
@@ -63,10 +63,14 @@ fn main() {
     App::new()
         .init_resource::<Score>()
         .init_resource::<GameInfo>()
-        .add_plugins(DefaultPlugins.set(ImagePlugin {
-            default_sampler:
-                ImageSamplerDescriptor::nearest()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(AssetPlugin {
+                    meta_check: bevy::asset::AssetMetaCheck::Never,
+                    ..default()
+                })
+                .set(ImagePlugin::default_nearest())
+        )
         .add_plugins(PipePlugin)
         .add_systems(Startup, startup)
         .add_systems(FixedUpdate, (
@@ -243,12 +247,11 @@ fn on_click(
         }
         if game_info.out_of_bounds == false {
             velocity.0 = 150.;
+            commands.spawn((
+                AudioPlayer::<AudioSource>(asset_server.load("audio/wing.ogg")),
+                PlaybackSettings::DESPAWN,
+            ));
         }
-
-        commands.spawn((
-            AudioPlayer::<AudioSource>(asset_server.load("audio/wing.ogg")),
-            PlaybackSettings::DESPAWN,
-        ));
     }
 }
 
@@ -295,9 +298,9 @@ fn check_collisions(
             sprite.custom_size.unwrap() / 2.
         );
 
-        if player_collider.intersects(&pipe_collider) {
-            commands.spawn((
-                AudioPlayer::<AudioSource>(asset_server.load("audio/hit.ogg")),
+        if player_collider.intersects(&pipe_collider) && game_info.game_state == 1{
+            commands.spawn((AudioPlayer
+                ::<AudioSource>(asset_server.load("audio/hit.ogg")),
                 PlaybackSettings::DESPAWN,
             ));
             if game_info.game_state == 1 {
@@ -330,8 +333,7 @@ fn check_collisions(
         );
 
         if player_collider.intersects(&gap_collider) {
-            println!("touching ground");
-            if game_info.game_state == 1 {
+                if game_info.game_state == 1 {
                 commands.trigger(EndGame);
             }
 
@@ -372,7 +374,6 @@ fn update_score(
         commands.entity(counter).despawn();
     }
     let len: usize = score.0.to_string().len();
-    println!("LEN: {}", len);
     for (i, n) in score.0.to_string().chars().enumerate() {
         commands.spawn((
             Sprite {
