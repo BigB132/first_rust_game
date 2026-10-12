@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <title>Bevy Game</title>
+    
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #0e0e0e;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        canvas {
+            display: block;
+            outline: none;
+        }
+    </style>
+    <!-- Wichtig für GitHub Pages, damit Pfade relativ aufgelöst werden: -->
+    <base href="/first_rust_game/" />
+<link rel="modulepreload" href="/first_rust_game/flappy_bird-ecadbbdccbf6e757.js" crossorigin="anonymous" integrity="sha384-B0NMvw6pmPw7kbVGIu82E7FNfq5E65b9prTy1Xjy6OCiSvMsJAJMH3RU4KjYkVCR"><link rel="preload" href="/first_rust_game/flappy_bird-3c42d60b4759cf02_bg.wasm" crossorigin="anonymous" integrity="sha384-pcWPPurnyZPGYyMw3DfVM3R3YQJQ4AvgEzEjwEFQUSkyRma6OO0lis+oF8IhPb1n" as="fetch" type="application/wasm"></head>
+<body>
+
+<script type="module">
+import init, * as bindings from '/first_rust_game/flappy_bird-ecadbbdccbf6e757.js';
+const wasm = await init({ module_or_path: '/first_rust_game/flappy_bird-3c42d60b4759cf02_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script></body>
+</html>
